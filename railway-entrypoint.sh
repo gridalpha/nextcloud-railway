@@ -23,6 +23,14 @@ if [ -f /var/www/html/version.php ] \
     rm -f /var/www/html/version.php
 fi
 
+# Apache's MPM state is normalised at build time, but report and re-assert it here
+# too: the build's own `apache2ctl -t` passes while the running container can still
+# abort with "More than one MPM loaded", so the running configuration is what counts.
+echo "railway-entrypoint: dynamic MPM modules: $(ls -1 /etc/apache2/mods-enabled/ 2>/dev/null | grep -i mpm | tr '\n' ' ')"
+echo "railway-entrypoint: compiled-in MPM: $(apache2 -l | grep -E '(prefork|worker|event)\.c' | tr -d ' ' | tr '\n' ' ')"
+grep -rn -i "loadmodule.*mpm" /etc/apache2/apache2.conf /etc/apache2/conf-enabled/ /etc/apache2/mods-enabled/ /etc/apache2/sites-enabled/ 2>/dev/null || true
+apache2ctl -t 2>&1 | sed 's/^/railway-entrypoint: apache2ctl -t: /' || true
+
 php /bootstrap-db.php
 
 exec /entrypoint.sh "$@"

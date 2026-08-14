@@ -59,6 +59,21 @@ RUN set -eux; \
 # and FORWARDED_FOR_HEADERS at runtime.
 RUN a2disconf remoteip
 
+# 4. HSTS.
+#
+# Railway's edge redirects http to https but sets no Strict-Transport-Security of
+# its own, and Nextcloud's setup checks flag its absence. Emit it from Apache, gated
+# on the request having actually arrived over TLS so a plain-http health probe is
+# unaffected.
+RUN set -eux; \
+    { \
+        echo '<IfModule mod_headers.c>'; \
+        echo '  Header always set Strict-Transport-Security "max-age=15552000; includeSubDomains" "expr=%{HTTP:X-Forwarded-Proto} == '"'"'https'"'"'"'; \
+        echo '</IfModule>'; \
+    } > /etc/apache2/conf-available/railway-hsts.conf; \
+    a2enconf railway-hsts; \
+    apache2ctl -t
+
 COPY supervisord.conf /supervisord.conf
 COPY railway-entrypoint.sh /railway-entrypoint.sh
 COPY bootstrap-db.php /bootstrap-db.php

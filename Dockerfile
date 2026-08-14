@@ -33,10 +33,19 @@ RUN set -eux; \
 # while the Railway deployment can still report SUCCESS and the public URL serves
 # 502. Force prefork at build time so the running image is unambiguous.
 RUN set -eux; \
-    a2dismod mpm_event mpm_worker || true; \
-    rm -f /etc/apache2/mods-enabled/mpm_event.* /etc/apache2/mods-enabled/mpm_worker.*; \
-    a2enmod mpm_prefork; \
-    apache2ctl -t || true
+    echo "== compiled-in modules:"; apache2 -l; \
+    echo "== enabled MPM modules:"; ls -1 /etc/apache2/mods-enabled/ | grep -i mpm || true; \
+    echo "== LoadModule lines mentioning mpm:"; grep -rn -i "loadmodule.*mpm" /etc/apache2/ || true; \
+    if apache2 -l | grep -qE '(prefork|worker|event)\.c'; then \
+        echo "an MPM is compiled in statically; removing every dynamically loaded MPM"; \
+        rm -f /etc/apache2/mods-enabled/mpm_*.load /etc/apache2/mods-enabled/mpm_*.conf; \
+    else \
+        echo "no static MPM; leaving only mpm_prefork enabled for mod_php"; \
+        rm -f /etc/apache2/mods-enabled/mpm_event.* /etc/apache2/mods-enabled/mpm_worker.*; \
+        a2enmod mpm_prefork; \
+    fi; \
+    echo "== final MPM state:"; ls -1 /etc/apache2/mods-enabled/ | grep -i mpm || echo "(none dynamic)"; \
+    apache2ctl -t
 
 # 3. Client IP behind Railway's edge.
 #

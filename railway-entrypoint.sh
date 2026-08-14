@@ -23,13 +23,24 @@ if [ -f /var/www/html/version.php ] \
     rm -f /var/www/html/version.php
 fi
 
-# Apache's MPM state is normalised at build time, but report and re-assert it here
-# too: the build's own `apache2ctl -t` passes while the running container can still
-# abort with "More than one MPM loaded", so the running configuration is what counts.
-echo "railway-entrypoint: dynamic MPM modules: $(ls -1 /etc/apache2/mods-enabled/ 2>/dev/null | grep -i mpm | tr '\n' ' ')"
-echo "railway-entrypoint: compiled-in MPM: $(apache2 -l | grep -E '(prefork|worker|event)\.c' | tr -d ' ' | tr '\n' ' ')"
-grep -rn -i "loadmodule.*mpm" /etc/apache2/apache2.conf /etc/apache2/conf-enabled/ /etc/apache2/mods-enabled/ /etc/apache2/sites-enabled/ 2>/dev/null || true
-apache2ctl -t 2>&1 | sed 's/^/railway-entrypoint: apache2ctl -t: /' || true
+# Apache's MPM state has to be fixed here rather than in the Dockerfile.
+#
+# mod_php only works under the prefork MPM, and Apache refuses to start at all with
+# "AH00534: Configuration error: More than one MPM loaded." The Dockerfile disables
+# mpm_event and mpm_worker and its `apache2ctl -t` passes — and the container that
+# Railway then runs still has mpm_event.load back in mods-enabled alongside
+# mpm_prefork.load, and still aborts. The build's view of /etc/apache2 is not the
+# view the running container gets, so the running container is where this belongs.
+#
+# Symptom if this is ever removed: Apache exits 1 in a tight loop under supervisord,
+# the deployment reports SUCCESS because cron keeps the container alive, and every
+# request to the public domain returns 502.
+if [ "$(ls -1 /etc/apache2/mods-enabled/ 2>/dev/null | grep -c '^mpm_.*\.load$')" -gt 1 ]; then
+    echo "railway-entrypoint: more than one MPM enabled ($(ls -1 /etc/apache2/mods-enabled/ | grep '^mpm_.*\.load$' | tr '\n' ' ')) - keeping only prefork for mod_php"
+    rm -f /etc/apache2/mods-enabled/mpm_event.* /etc/apache2/mods-enabled/mpm_worker.*
+    a2enmod mpm_prefork >/dev/null
+fi
+apache2ctl -t 2>&1 | sed 's/^/railway-entrypoint: apache2ctl -t: /'
 
 php /bootstrap-db.php
 

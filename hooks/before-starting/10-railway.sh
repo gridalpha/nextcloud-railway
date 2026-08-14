@@ -22,6 +22,13 @@ fi
 # open and which Nextcloud's admin overview flags as unsuitable for production.
 occ background:cron
 
+# Keep the generated .htaccess in step with the installed version, so Nextcloud's
+# pretty URLs keep working across upgrades. The image can do this itself via
+# NEXTCLOUD_INIT_HTACCESS, but it runs the command under `set -e` at a point where
+# the instance may not be installed yet, and a failure there crash-loops the
+# container. Here a failure is only logged.
+occ maintenance:update:htaccess
+
 # Two settings whose absence Nextcloud reports as configuration warnings.
 occ config:system:set default_phone_region --value="${NEXTCLOUD_DEFAULT_PHONE_REGION:-US}"
 occ config:system:set maintenance_window_start --type=integer --value="${NEXTCLOUD_MAINTENANCE_WINDOW_START:-1}"

@@ -11,11 +11,15 @@ set -eu
 # looks installed and is not, and every later boot skips installation for good. The
 # instance serves a 500 and no amount of correct configuration fixes it.
 #
-# Clearing the marker makes the next boot re-run initialisation. Safe by
-# construction: config.php is the file a real installation writes, so this cannot
-# fire on an instance that has any data to lose.
-if [ -f /var/www/html/version.php ] && [ ! -f /var/www/html/config/config.php ]; then
-    echo "railway-entrypoint: application files present but never installed (no config.php) - clearing version.php so initialisation runs again"
+# Clearing the marker makes the next boot re-run initialisation. Test the config's
+# own `installed` flag rather than merely whether config.php exists: a single HTTP
+# request to an uninstalled instance is enough for Nextcloud to persist an
+# instanceid, passwordsalt and secret into config.php, so the file's presence says
+# nothing about whether an installation ever completed. The flag does, and it is
+# only ever true once there is data worth protecting.
+if [ -f /var/www/html/version.php ] \
+    && ! grep -qE "'installed'[[:space:]]*=>[[:space:]]*true" /var/www/html/config/config.php 2>/dev/null; then
+    echo "railway-entrypoint: application files present but installation never completed - clearing version.php so initialisation runs again"
     rm -f /var/www/html/version.php
 fi
 
